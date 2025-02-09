@@ -26,10 +26,3 @@ python main.py --device 0 --dataset Industrial_and_Scientific
 ```
 python main.py --device 0 --train --rec_pre_trained_data Industrial_and_Scientific --save_dir model_train --bath_size2 20
 ```
-
-
-### Evalutaion
-
-```
-python main_baseline.py --device hpu --inference --rec_pre_trained_data Industrial_and_Scientific --nn_parameter --baseline tallrec --save_dir tallrecbest
-```
