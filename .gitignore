@@ -1,3 +1,5 @@
 *.pt
 *.txt
 *.pyc
+*.json.gz
+*.pth
