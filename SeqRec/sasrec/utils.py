@@ -223,7 +223,7 @@ def data_partition(fname, args, path=None):
 # TODO: merge evaluate functions for test and val set
 # evaluate on test set
 def evaluate(model, dataset, args, mode= 1, ranking = 10):
-    [train, valid, test, usernum, itemnum, eval_set, eval_item_set] = copy.deepcopy(dataset)
+    [train, valid, test, usernum, itemnum, eval_set] = copy.deepcopy(dataset)
 
     NDCG = 0.0
     HT = 0.0
@@ -292,7 +292,7 @@ def evaluate(model, dataset, args, mode= 1, ranking = 10):
 
 # evaluate on val set
 def evaluate_valid(model, dataset, args):
-    [train, valid, test, usernum, itemnum, eval_set, eval_item_set] = copy.deepcopy(dataset)
+    [train, valid, test, usernum, itemnum, eval_set] = copy.deepcopy(dataset)
 
     NDCG = 0.0
     valid_user = 0.0

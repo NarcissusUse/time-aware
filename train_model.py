@@ -67,9 +67,9 @@ def train_model_(rank,world_size,args):
     model = llmrec_model(args).to(args.device)
 
     dataset = data_partition(args.rec_pre_trained_data, args, path=f'./SeqRec/data_{args.rec_pre_trained_data}/{args.rec_pre_trained_data}')
-    [user_train, user_valid, user_test, usernum, itemnum, eval_set, eval_item_set] = dataset
+    [user_train, user_valid, user_test, usernum, itemnum, eval_set] = dataset
     print('user num:', usernum, 'item num:', itemnum)
-    num_batch = len(user_train) // args.batch_size2
+    num_batch = len(user_train) // args.batch_size
     cc = 0.0
     for u in user_train:
         cc += len(user_train[u])
@@ -79,11 +79,11 @@ def train_model_(rank,world_size,args):
     
     
     if args.multi_gpu:
-        train_data_loader = DataLoader(train_data_set, batch_size = args.batch_size2, sampler=DistributedSampler(train_data_set, shuffle=True), pin_memory=True)
+        train_data_loader = DataLoader(train_data_set, batch_size = args.batch_size, sampler=DistributedSampler(train_data_set, shuffle=True), pin_memory=True)
         valid_data_loader = DataLoader(valid_data_set, batch_size = args.batch_size_infer, sampler=DistributedSampler(valid_data_set, shuffle=True), pin_memory=True)
         model = DDP(model, static_graph=True)
     else:
-        train_data_loader = DataLoader(train_data_set, batch_size = args.batch_size2, pin_memory=True, shuffle=True)
+        train_data_loader = DataLoader(train_data_set, batch_size = args.batch_size, pin_memory=True, shuffle=True)
     adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.stage2_lr, betas=(0.9, 0.98))
     scheduler = LambdaLR(adam_optimizer, lr_lambda = lambda epoch: 0.95 ** epoch)
     epoch_start_idx = 1

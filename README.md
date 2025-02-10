@@ -24,5 +24,5 @@ python main.py --device 0 --dataset Industrial_and_Scientific
 
 
 ```
-python main.py --device 0 --train --rec_pre_trained_data Industrial_and_Scientific --save_dir model_train --bath_size2 20
+python main.py --device 0 --train --rec_pre_trained_data Industrial_and_Scientific --save_dir model_train --batch_size 20
 ```

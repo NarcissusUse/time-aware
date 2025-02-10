@@ -28,12 +28,7 @@ class llmrec_model(nn.Module):
         
         with open(f'./SeqRec/data_{args.rec_pre_trained_data}/text_name_dict.json.gz','rb') as ft:
             self.text_name_dict = pickle.load(ft)
-            
-        if args.load_candi:
-            with open(f'./SeqRec/data_{args.rec_pre_trained_data}/candi_set.json.gz','rb') as ft:
-                self.candi_set = pickle.load(ft)
         
-
         self.recsys = RecSys(args.recsys, rec_pre_trained_data, self.device)
 
         self.item_num = self.recsys.item_num

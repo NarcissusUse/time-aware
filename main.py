@@ -1,3 +1,5 @@
+# Code based on https://github.com/ghdtjr/A-LLMRec
+
 import os
 import sys
 import argparse
@@ -20,7 +22,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--save_dir", type=str, default='seqllm')
 
-    parser.add_argument('--batch_size2', default=20, type=int)
+    parser.add_argument('--batch_size', default=20, type=int)
     parser.add_argument('--batch_size_infer', default=20, type=int)
     
     parser.add_argument('--infer_epoch', default=1, type=int)
