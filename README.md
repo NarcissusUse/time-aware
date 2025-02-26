@@ -2,6 +2,10 @@
 
 This repository is designed for implementing LLM-SRec.
 
+## Overview
+
+In this [paper](https://arxiv.org/abs/2502.13909), we first demonstrate through a series of experiments that existing LLM4Rec models do not fully capture sequential information both during training and inference. Then, we propose a simple yet effective LLM-based sequential recommender, called LLM-SRec, a method that enhances the integration of sequential information into LLMs by distilling the user representations extracted from a pre-trained CF-SRec model into LLMs.
+
 - We use LLaMA-3.2-3b-instruct.
 
 ## Env Setting
