@@ -330,7 +330,11 @@ class llmrec_model(nn.Module):
         print("LLMRec model Matching loss in epoch {}/{} iteration {}/{}: {}".format(epoch, total_epoch, step, total_step, match_loss))
 
         loss.backward()
+        if self.args.nn_parameter:
+            htcore.mark_step()
         optimizer.step()
+        if self.args.nn_parameter:
+            htcore.mark_step()
         
     
     def split_into_batches(self,itemnum, m):
