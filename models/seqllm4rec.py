@@ -28,7 +28,10 @@ class llm4rec(nn.Module):
         print()
         print("=========")
 
-        self.llm_model = AutoModelForCausalLM.from_pretrained(model_id, device_map=self.device, torch_dtype=torch.float16,load_in_8bit=True,)
+        if self.args.nn_parameter:
+            self.llm_model = AutoModelForCausalLM.from_pretrained(model_id, device_map=self.device, torch_dtype=torch.float16,load_in_8bit=True,)
+        else:
+            self.llm_model = AutoModelForCausalLM.from_pretrained(model_id, device_map=self.device, torch_dtype=torch.float16,load_in_8bit=True,)
         self.llm_tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=False)
             
         
@@ -54,10 +57,14 @@ class llm4rec(nn.Module):
                 param.requires_grad = False
 
         if not args.token:
-            self.CLS = nn.Embedding(1,self.llm_model.config.hidden_size).to(device)
-            nn.init.normal_(self.CLS.weight, mean = self.llm_model.model.embed_tokens.weight.mean(), std = self.llm_model.model.embed_tokens.weight.std())
-            self.CLS_item = nn.Embedding(1,self.llm_model.config.hidden_size).to(device)
-            nn.init.normal_(self.CLS_item.weight, mean = self.llm_model.model.embed_tokens.weight.mean(), std = self.llm_model.model.embed_tokens.weight.std())
+            if args.nn_parameter:
+                self.CLS = nn.Parameter(torch.normal(0,1, size = (1,self.llm_model.config.hidden_size))).to(device)
+                self.CLS_item = nn.Parameter(torch.normal(0,1, size = (1,self.llm_model.config.hidden_size))).to(device)
+            else:
+                self.CLS = nn.Embedding(1,self.llm_model.config.hidden_size).to(device)
+                nn.init.normal_(self.CLS.weight, mean = self.llm_model.model.embed_tokens.weight.mean(), std = self.llm_model.model.embed_tokens.weight.std())
+                self.CLS_item = nn.Embedding(1,self.llm_model.config.hidden_size).to(device)
+                nn.init.normal_(self.CLS_item.weight, mean = self.llm_model.model.embed_tokens.weight.mean(), std = self.llm_model.model.embed_tokens.weight.std())
         
         self.pred_user = nn.Sequential(
                 nn.Linear(self.llm_model.config.hidden_size, 2048),
