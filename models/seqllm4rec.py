@@ -29,7 +29,7 @@ class llm4rec(nn.Module):
         print("=========")
 
         if self.args.nn_parameter:
-            self.llm_model = AutoModelForCausalLM.from_pretrained(model_id, device_map=self.device, torch_dtype=torch.float16,load_in_8bit=True,)
+            self.llm_model = AutoModelForCausalLM.from_pretrained(model_id, device_map=self.device, torch_dtype=torch.float16)
         else:
             self.llm_model = AutoModelForCausalLM.from_pretrained(model_id, device_map=self.device, torch_dtype=torch.float16,load_in_8bit=True,)
         self.llm_tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=False)
