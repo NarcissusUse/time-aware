@@ -34,10 +34,7 @@ class llmrec_model(nn.Module):
         self.item_num = self.recsys.item_num
         self.rec_sys_dim = self.recsys.hidden_units
         self.sbert_dim = 768
-        
-        self.recsys_mean = self.recsys.model.item_emb.weight.mean(axis=0)
-        self.recsys_std = self.recsys.model.item_emb.weight.std(axis=0)
-                
+
         self.mse = nn.MSELoss()
         self.l1 = nn.L1Loss()
         self.all_embs = None

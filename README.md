@@ -26,7 +26,7 @@ python main.py --device 0 --dataset Industrial_and_Scientific
 
 We have also implemented LLM-SRec on the Gaudi-v2 environment (Note that `--nn_parameter` must be used for training models on Gaudi-v2):
 ```
-python main.py --device 0 --dataset Industrial_and_Scientific --nn_parameter
+python main.py --device hpu --dataset Industrial_and_Scientific --nn_parameter
 ```
 
 ## Train - Item Retrieval
@@ -38,5 +38,5 @@ python main.py --device 0 --train --rec_pre_trained_data Industrial_and_Scientif
 
 For Gaudi-v2:
 ```
-python main.py --device 0 --train --rec_pre_trained_data Industrial_and_Scientific --save_dir model_train --batch_size 20 --nn_parameter
+python main.py --device hpu --train --rec_pre_trained_data Industrial_and_Scientific --save_dir model_train --batch_size 20 --nn_parameter
 ```
