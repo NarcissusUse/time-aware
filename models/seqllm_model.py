@@ -87,8 +87,12 @@ class llmrec_model(nn.Module):
             torch.save(self.llm.pred_user.state_dict(), out_dir + 'pred_user.pt')
             torch.save(self.llm.pred_item.state_dict(), out_dir + 'pred_item.pt')
             if not args.token:
-                torch.save(self.llm.CLS.state_dict(), out_dir + 'CLS.pt')
-                torch.save(self.llm.CLS_item.state_dict(), out_dir + 'CLS_item.pt')
+                if args.nn_parameter:
+                    torch.save(self.llm.CLS.data, out_dir + 'CLS.pt')
+                    torch.save(self.llm.CLS_item.data, out_dir + 'CLS_item.pt')
+                else:
+                    torch.save(self.llm.CLS.state_dict(), out_dir + 'CLS.pt')
+                    torch.save(self.llm.CLS_item.state_dict(), out_dir + 'CLS_item.pt')
             if args.token:
                 torch.save(self.llm.llm_model.model.embed_tokens.state_dict(), out_dir + 'token.pt')
   
