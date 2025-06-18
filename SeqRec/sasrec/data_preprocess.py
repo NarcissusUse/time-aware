@@ -68,6 +68,7 @@ def preprocess_raw_5core(fname):
         'Electronics': 0.05,
         'Industrial_and_Scientific': 1.0,
         'CDs_and_Vinyl':0.33,
+        'All_Beauty': 0.075
         
     }
     

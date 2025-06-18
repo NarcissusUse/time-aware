@@ -13,7 +13,7 @@ if __name__ == "__main__":
     parser.add_argument("--multi_gpu", action='store_true')
     parser.add_argument('--device', type=str, default='0')
     parser.add_argument("--world_size", type=int, default=8)
-    parser.add_argument("--llm", type=str, default='llama-3b', help='flan_t5, llama, vicuna')
+    parser.add_argument("--llm", type=str, default='llama-1b', help='flan_t5, llama, vicuna')
     parser.add_argument("--recsys", type=str, default='sasrec')
     parser.add_argument("--rec_pre_trained_data", type=str, default='Movies_and_TV')
     parser.add_argument("--train", action='store_true')
@@ -22,8 +22,8 @@ if __name__ == "__main__":
 
     parser.add_argument("--save_dir", type=str, default='seqllm')
 
-    parser.add_argument('--batch_size', default=20, type=int)
-    parser.add_argument('--batch_size_infer', default=20, type=int)
+    parser.add_argument('--batch_size', default=4, type=int)
+    parser.add_argument('--batch_size_infer', default=4, type=int)
     
     parser.add_argument('--infer_epoch', default=1, type=int)
     

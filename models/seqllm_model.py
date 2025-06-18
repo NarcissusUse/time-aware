@@ -10,7 +10,7 @@ from models.recsys_model import *
 from models.seqllm4rec import *
 from sentence_transformers import SentenceTransformer
 from datetime import datetime
-
+import gc
 from tqdm import trange, tqdm
 
 try:
@@ -151,8 +151,33 @@ class llmrec_model(nn.Module):
         d_ = 'No Description'
 
         l = [datetime.utcfromtimestamp(int(self.text_name_dict['time'][i][user])/1000) for i in item]
-        return [l_.strftime('%Y-%m-%d') for l_ in l]
-    
+        # Format: Jan 1, 2022 at 9:23 AM
+        return [l_.strftime('%b %d, %Y at %I:%M %p') for l_ in l]
+    def get_time_context(self, timestamp_ms):
+        """
+        根据时间戳获取多维度时间上下文
+        """
+        dt = datetime.utcfromtimestamp(timestamp_ms / 1000)
+        
+        time_str = dt.strftime('%H:%M:%S')
+        
+        hour = dt.hour
+        
+        if 6 <= hour < 12:
+            peak_type = "morning_peak"
+        elif 12 <= hour < 18:
+            peak_type = "afternoon_peak"
+        elif 18 <= hour < 22:
+            peak_type = "evening_peak"
+        else:
+            peak_type = "off_peak"
+        
+        weekday = dt.weekday()  # 0=Monday, 6=Sunday
+        day_type = "weekday" if weekday < 5 else "weekend"
+        
+        work_status = "work_hour" if (9 <= hour < 17 and weekday < 5) else "non_work_hour"
+        
+        return time_str, peak_type, day_type, work_status
 
     def find_item_text_single(self, item, title_flag=True, description_flag=True):
         t = 'title'
@@ -190,32 +215,50 @@ class llmrec_model(nn.Module):
             self.extract_emb(data)
 
     def make_interact_text(self, interact_ids, interact_max_num, user):
-        interact_item_titles_ = self.find_item_text(interact_ids, title_flag=True, description_flag=False)
-        times = self.find_item_time(interact_ids, user)
-        interact_text = []
-        count = 1
+            interact_item_titles_ = self.find_item_text(interact_ids, title_flag=True, description_flag=False)
+            interact_text = []
         
+            if interact_max_num == 'all':
+                items_to_process = interact_item_titles_
+                ids_to_process = interact_ids
+            else:
+                items_to_process = interact_item_titles_[-interact_max_num:]
+                ids_to_process = interact_ids[-interact_max_num:]
+            timestamps = []
+            for item_id in ids_to_process:
+                timestamp_ms = int(self.text_name_dict['time'][item_id][user])
+                timestamps.append(timestamp_ms)
+            session_start_ms = timestamps[0] if timestamps else 0
+        
+            def calculate_gap_from_last(current_ms, previous_ms):
+                """计算与上一个物品的时间间隔"""
+                if previous_ms is None:
+                    return 0
+                diff_seconds = (current_ms - previous_ms) / 1000
+                return int(diff_seconds)
+        
+            session_parts = []
+            previous_timestamp = None
             
-        if interact_max_num =='all':
-            times = self.find_item_time(interact_ids, user)
-        else:
-            times = self.find_item_time(interact_ids[-interact_max_num:], user)
-        
-        if interact_max_num == 'all':
-            for title in interact_item_titles_:
-                interact_text.append(f'Item No.{count}, Time: {times[count-1]}, ' + title + '[HistoryEmb]')
-
-                count+=1
-        else:
-            for title in interact_item_titles_[-interact_max_num:]:
-                interact_text.append(f'Item No.{count}, Time: {times[count-1]}, ' + title + '[HistoryEmb]')
+            for idx, (title, item_id) in enumerate(zip(items_to_process, ids_to_process)):
+                current_timestamp = timestamps[idx]
                 
-                count+=1
-            interact_ids = interact_ids[-interact_max_num:]
-            
-        interact_text = ','.join(interact_text)
-        return interact_text, interact_ids
-
+                time_str, peak_type, day_type, work_status = self.get_time_context(current_timestamp)
+                
+                gap_from_last = calculate_gap_from_last(current_timestamp, previous_timestamp)
+                
+                time_context = f"@ {time_str} [{peak_type}, {day_type}, {work_status}, gap_from_last={gap_from_last}s]"
+                
+                if idx == 0:
+                    session_parts.append(f"{title} {time_context}[HistoryEmb] (session start)")
+                else:
+                    session_parts.append(f"{title} {time_context}[HistoryEmb]")
+                
+                previous_timestamp = current_timestamp
+        
+            interact_text = ' → '.join(session_parts)
+        
+            return interact_text, ids_to_process
     
     
     def make_candidate_text(self, interact_ids, candidate_num, target_item_id, target_item_title, candi_set = None, task = 'ItemTask'):
@@ -339,7 +382,12 @@ class llmrec_model(nn.Module):
         optimizer.step()
         if self.args.nn_parameter:
             htcore.mark_step()
+        del loss, rec_loss, match_loss
+        del samples, text_input, candidates_pos, interact_embs, candidate_embs
         
+        # 显式清理CUDA缓存
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     
     def split_into_batches(self,itemnum, m):
         numbers = list(range(1, itemnum+1))
@@ -347,21 +395,31 @@ class llmrec_model(nn.Module):
         batches = [numbers[i:i + m] for i in range(0, itemnum, m)]
         
         return batches
-
+    def clear_memory(self):
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()  # 添加同步
+        gc.collect()
+    
+        # 强制删除一些可能的循环引用
+        import sys
+        sys.stdout.flush()
     
     def generate_batch(self,data):
         if self.all_embs == None:
-            batch_ = 128
+            batch_ = 64
             if self.args.llm =='llama':
-                batch_ = 64
+                batch_ = 32
             if self.args.rec_pre_trained_data == 'Electronics' or self.args.rec_pre_trained_data == 'Books':
-                batch_ = 64
+                batch_ = 32
                 if self.args.llm =='llama':
                     batch_ = 32
             batches = self.split_into_batches(self.item_num, batch_)#128
             self.all_embs = []
             max_input_length = 1024
-            for bat in tqdm(batches):
+            for i, bat in enumerate(tqdm(batches)):
+                if i % 5 == 0:  # 更频繁清理
+                    self.clear_memory()
                 candidate_text = []
                 candidate_ids = []
                 candidate_embs = []
@@ -394,8 +452,12 @@ class llmrec_model(nn.Module):
                         item_outputs = self.llm.pred_item(item_outputs)
                     
                     self.all_embs.append(item_outputs)
-                    del candi_outputs
-                    del item_outputs        
+                    del candidate_text, candidate_ids, candidate_embs
+                    del candi_tokens, candi_embeds, candi_outputs, item_outputs
+                    del indx
+                    if i % 10 == 0:
+                        torch.cuda.empty_cache()
+                        gc.collect()  
             self.all_embs = torch.cat(self.all_embs)
             
         u, seq, pos, neg, rank, candi_set, files = data
@@ -534,5 +596,8 @@ class llmrec_model(nn.Module):
                 user_outputs = self.llm.pred_user(user_outputs)
                 
                 self.extract_embs_list.append(user_outputs.detach().cpu())
+                if len(self.extract_embs_list) > 1000:
+                    self.extract_embs_list = self.extract_embs_list[-500:]
+                    gc.collect()
                 
         return 0

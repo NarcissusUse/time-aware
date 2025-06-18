@@ -21,8 +21,8 @@ class llm4rec(nn.Module):
         
         if llm_model == 'llama':
             model_id = "meta-llama/Meta-Llama-3-8B-Instruct"
-        elif llm_model == 'llama-3b':
-            model_id="meta-llama/Llama-3.2-3B-Instruct"
+        elif llm_model == 'llama-1b':
+            model_id="meta-llama/Llama-3.2-1B-Instruct"
         else:
             raise Exception(f'{llm_model} is not supported')
         print()
@@ -31,7 +31,7 @@ class llm4rec(nn.Module):
         if self.args.nn_parameter:
             self.llm_model = AutoModelForCausalLM.from_pretrained(model_id, device_map=self.device, torch_dtype=torch.float16)
         else:
-            self.llm_model = AutoModelForCausalLM.from_pretrained(model_id, device_map=self.device, torch_dtype=torch.float16,load_in_8bit=True,)
+            self.llm_model = AutoModelForCausalLM.from_pretrained(model_id, device_map=self.device, torch_dtype=torch.float16,load_in_8bit=False,)
         self.llm_tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=False)
             
         
