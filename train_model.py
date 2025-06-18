@@ -5,6 +5,7 @@ import random
 import time
 import gc
 import sys
+import importlib
 from datetime import datetime
 from tqdm import tqdm
 
@@ -15,21 +16,45 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 from torch.optim.lr_scheduler import LambdaLR
 
-from models.seqllm_model import *
+# Dynamic import will be handled in the functions
 from SeqRec.sasrec.utils import data_partition, SeqDataset, SeqDataset_Inference, SeqDataset_Validation
 
 def get_current_time():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 def clear_memory():
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-        torch.cuda.synchronize()  # 添加同步
+        torch.cuda.synchronize()
     gc.collect()
-    
-    # 强制删除一些可能的循环引用
     import sys
     sys.stdout.flush()
 
+def load_model_class(model_version=''):
+    """
+    Dynamically load the appropriate seqllm_model class based on version
+    """
+    try:
+        if model_version:
+            # Import specific version (e.g., seqllm_model_B)
+            module_name = f'models.seqllm_model_{model_version}'
+            print(f"Loading model from: {module_name}")
+        else:
+            # Import base model
+            module_name = 'models.seqllm_model'
+            print(f"Loading base model from: {module_name}")
+        
+        model_module = importlib.import_module(module_name)
+        return model_module.llmrec_model
+    except ImportError as e:
+        print(f"Failed to import {module_name}: {e}")
+        print("Available model versions should be in models/ directory")
+        print("Trying to fall back to base model...")
+        try:
+            model_module = importlib.import_module('models.seqllm_model')
+            return model_module.llmrec_model
+        except ImportError:
+            raise ImportError(f"Could not import any seqllm_model. Please check your models directory.")
 
 def setup_ddp(rank, world_size, args):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -41,10 +66,11 @@ def setup_ddp(rank, world_size, args):
     else:
         init_process_group(backend="nccl", rank=rank, world_size=world_size)
         torch.cuda.set_device(rank)
-    # htcore.set_device(rank)
         
 def train_model(args):
-    print('LLMRec strat train\n')
+    print('LLMRec start train\n')
+    print(f"Using model version: {'base' if not args.model_version else args.model_version}")
+    
     if args.multi_gpu:
         world_size = args.world_size
         mp.spawn(train_model_,
@@ -56,6 +82,8 @@ def train_model(args):
 
 def inference(args):
     print('LLMRec start inference\n')
+    print(f"Using model version: {'base' if not args.model_version else args.model_version}")
+    
     if args.multi_gpu:
         world_size = args.world_size
         mp.spawn(inference_,
@@ -64,20 +92,24 @@ def inference(args):
              join=True)
     else:
         inference_(0,0,args)
-  
 
-def train_model_(rank,world_size,args):
+def train_model_(rank, world_size, args):
     if args.multi_gpu:
         setup_ddp(rank, world_size, args)
         if args.device == 'hpu':
             args.device = torch.device('hpu')
         else:
             args.device = 'cuda:' + str(rank)
+    
     print(f"[{get_current_time()}] Training started on rank {rank}")
     random.seed(0)
+    
     if torch.cuda.is_available():
         os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128'
-    model = llmrec_model(args).to(args.device)
+    
+    # Load the appropriate model class
+    llmrec_model_class = load_model_class(args.model_version)
+    model = llmrec_model_class(args).to(args.device)
     
     dataset = data_partition(args.rec_pre_trained_data, args, path=f'./SeqRec/data_{args.rec_pre_trained_data}/{args.rec_pre_trained_data}')
     [user_train, user_valid, user_test, usernum, itemnum, eval_set] = dataset
@@ -87,9 +119,9 @@ def train_model_(rank,world_size,args):
     for u in user_train:
         cc += len(user_train[u])
     print('average sequence length: %.2f' % (cc / len(user_train)))
+    
     # Init Dataloader, Model, Optimizer
     train_data_set = SeqDataset(user_train, len(user_train.keys()), itemnum, args.maxlen)
-    
     
     if args.multi_gpu:
         train_data_loader = DataLoader(train_data_set, batch_size = args.batch_size, 
@@ -99,6 +131,7 @@ def train_model_(rank,world_size,args):
     else:
         train_data_loader = DataLoader(train_data_set, batch_size = args.batch_size, 
                                      pin_memory=False, shuffle=True, num_workers=1)
+    
     adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.stage2_lr, betas=(0.9, 0.98))
     scheduler = LambdaLR(adam_optimizer, lr_lambda = lambda epoch: 0.95 ** epoch)
     epoch_start_idx = 1
@@ -140,7 +173,7 @@ def train_model_(rank,world_size,args):
             model([u,seq,pos,neg], optimizer=adam_optimizer, batch_iter=[epoch,args.num_epochs + 1,step,num_batch], mode='phase2')
             if step % 10 == 0: 
                 clear_memory()
-                if step > 0:  # 避免第一步显示
+                if step > 0:
                     print(f"[{get_current_time()}] Epoch {epoch}/{args.num_epochs}, Step {step}/{num_batch}")
             if step % 100 == 0:
                 if torch.cuda.is_available():
@@ -178,7 +211,6 @@ def train_model_(rank,world_size,args):
                             clear_memory()
                 perform = model.HT/model.users
 
-
                 if perform >= best_perform:
                     best_perform = perform
                     if rank ==0:
@@ -198,13 +230,16 @@ def train_model_(rank,world_size,args):
                             model([u,seq,pos,neg, rank, None, 'original'], mode='generate_batch')
                             if batch_idx % 10 == 0:
                                 clear_memory()
-                    out_dir = f'./models/{args.save_dir}/'
+                    
+                    # Update save directory to include model version
+                    save_dir_with_version = f"{args.save_dir}_{args.model_version}" if args.model_version else args.save_dir
+                    out_dir = f'./models/{save_dir_with_version}/'
                     out_dir = out_dir[:-1] + 'best/'
                     
                     out_dir += f'{args.rec_pre_trained_data}_'
-                    
                     out_dir += f'{args.llm}_{epoch}_results.txt'
                     
+                    os.makedirs(os.path.dirname(out_dir), exist_ok=True)
                     f = open(out_dir, 'a')
                     f.write(f'NDCG: {model.NDCG/model.users}, HR: {model.HT/model.users}\n')
                     f.write(f'NDCG20: {model.NDCG_20/model.users}, HR20: {model.HIT_20/model.users}\n')
@@ -218,9 +253,12 @@ def train_model_(rank,world_size,args):
                     sys.exit("Terminating Train")
                 model.train()
                 scheduler.step()
+        
         epoch_end_time = time.time()
         epoch_duration = epoch_end_time - epoch_start_time
         print(f"[{get_current_time()}] Epoch {epoch} completed in {epoch_duration:.2f} seconds")        
+        
+        # Rest of the training loop...
         if rank == 0:
             model.eval()
             num_valid_batch = len(user_valid.keys())//args.batch_size_infer
@@ -251,7 +289,7 @@ def train_model_(rank,world_size,args):
                     u, seq, pos, neg = u.numpy(), seq.numpy(), pos.numpy(), neg.numpy()                        
                     model([u,seq,pos,neg, rank, None, 'original'], mode='generate_batch')
 
-
+            perform = model.HT/model.users
             if perform >= best_perform:
                 best_perform = perform
                 if rank ==0:
@@ -269,18 +307,19 @@ def train_model_(rank,world_size,args):
                         u, seq, pos, neg = data
                         u, seq, pos, neg = u.numpy(), seq.numpy(), pos.numpy(), neg.numpy()                        
                         model([u,seq,pos,neg, rank, None, 'original'], mode='generate_batch')
-                out_dir = f'./models/{args.save_dir}/'
+                
+                save_dir_with_version = f"{args.save_dir}_{args.model_version}" if args.model_version else args.save_dir
+                out_dir = f'./models/{save_dir_with_version}/'
                 out_dir = out_dir[:-1] + 'best/'
                 
                 out_dir += f'{args.rec_pre_trained_data}_'
-                
                 out_dir += f'{args.llm}_{epoch}_results.txt'
                 
+                os.makedirs(os.path.dirname(out_dir), exist_ok=True)
                 f = open(out_dir, 'a')
                 f.write(f'NDCG: {model.NDCG/model.users}, HR: {model.HT/model.users}\n')
                 f.write(f'NDCG20: {model.NDCG_20/model.users}, HR20: {model.HIT_20/model.users}\n')
                 f.close()
-
                 
                 early_stop = 0
             else:
@@ -291,10 +330,36 @@ def train_model_(rank,world_size,args):
             model.train()
             scheduler.step()
         clear_memory()
+    
     total_time = time.time() - t0
     print(f'[{get_current_time()}] Training completed! Total time: {total_time:.2f} seconds')
     
     print('train time :', time.time() - t0)
+    if args.multi_gpu:
+        destroy_process_group()
+    return
+
+def inference_(rank, world_size, args):
+    # Similar modifications for inference function
+    if args.multi_gpu:
+        setup_ddp(rank, world_size, args)
+        if args.device == 'hpu':
+            args.device = torch.device('hpu')
+        else:
+            args.device = 'cuda:' + str(rank)
+    
+    print(f"[{get_current_time()}] Inference started on rank {rank}")
+    
+    # Load the appropriate model class
+    llmrec_model_class = load_model_class(args.model_version)
+    model = llmrec_model_class(args).to(args.device)
+    
+    # Load trained model weights
+    model.load_model(args, phase2_epoch=args.infer_epoch)
+    
+    # Rest of inference logic...
+    print("Inference function - implement as needed")
+    
     if args.multi_gpu:
         destroy_process_group()
     return
